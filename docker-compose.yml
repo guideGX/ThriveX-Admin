@@ -1,0 +1,23 @@
+# ============================================================================
+# ThriveX-Admin Docker Compose 部署文件
+# ----------------------------------------------------------------------------
+# 将此文件上传到服务器，配合 GitHub Actions SSH 部署使用。
+# 首次部署前需手动登录 GHCR：
+#   echo "<GITHUB_PAT>" | docker login ghcr.io -u <username> --password-stdin
+# ============================================================================
+
+services:
+  thrivex-admin:
+    # 从 GitHub Container Registry 拉取镜像
+    # 请将 <OWNER> 替换为你的 GitHub 用户名/组织名
+    image: ghcr.io/<OWNER>/thrivex-admin:latest
+    container_name: thrivex-admin
+    # 端口映射：宿主机 9002 → 容器 80 (Nginx)
+    ports:
+      - "9002:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

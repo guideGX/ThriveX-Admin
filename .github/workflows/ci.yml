@@ -1,0 +1,63 @@
+# ============================================================================
+# ThriveX-Admin CI 工作流
+# ----------------------------------------------------------------------------
+# 持续集成：代码质量检查 + 生产构建验证
+# 在每次 push 和 Pull Request 时运行，确保代码不会破坏构建。
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  lint-build:
+    name: 代码检查与构建
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉取代码
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 2. 安装 Node.js（自带 npm 缓存）
+      - name: 安装 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      # 3. 安装依赖（使用锁文件保证一致性）
+      - name: 安装依赖
+        run: npm ci
+
+      # 4. ESLint 代码规范检查
+      - name: 代码检查 (ESLint)
+        run: npm run lint
+
+      # 5. 生产构建（注入环境变量）
+      - name: 生产构建 (Vite Build)
+        run: npm run build
+        env:
+          VITE_PROJECT_API: ${{ secrets.VITE_PROJECT_API || 'https://api.example.com/api' }}
+          VITE_BAIDU_TONGJI_SITE_ID: ${{ secrets.VITE_BAIDU_TONGJI_SITE_ID || '' }}
+          VITE_BAIDU_TONGJI_ACCESS_TOKEN: ${{ secrets.VITE_BAIDU_TONGJI_ACCESS_TOKEN || '' }}
+          VITE_AI_APIPASSWORD: ${{ secrets.VITE_AI_APIPASSWORD || '' }}
+          VITE_AI_MODEL: ${{ secrets.VITE_AI_MODEL || '' }}
+          VITE_GAODE_WEB_API: ${{ secrets.VITE_GAODE_WEB_API || '' }}
+
+      # 6. 上传构建产物（供下游 Job 下载，也可用于预览）
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7

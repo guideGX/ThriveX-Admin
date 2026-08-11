@@ -3,7 +3,6 @@ import { Form, Input, Button, message } from 'antd';
 
 import { useUserStore } from '@/stores';
 import { editUserDataAPI } from '@/api/user';
-import { User } from '@/types/app/user';
 
 interface UserForm {
   name: string;
