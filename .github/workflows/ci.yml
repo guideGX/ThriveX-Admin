@@ -25,11 +25,11 @@ jobs:
     steps:
       # 1. 拉取代码
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # 2. 安装 Node.js（自带 npm 缓存）
       - name: 安装 Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -56,7 +56,7 @@ jobs:
 
       # 6. 上传构建产物（供下游 Job 下载，也可用于预览）
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
