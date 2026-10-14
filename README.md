@@ -18,6 +18,16 @@
     </a>
 </p>
 
+---
+
+> ### 🍴 关于本仓库
+>
+> 本仓库是 [**LiuYuYang01/ThriveX-Admin**](https://github.com/LiuYuYang01/ThriveX-Admin) 的 **Fork**，用于个人学习与前端工程化实践，**并非上游官方仓库**。
+> 上游作者：[刘宇阳](https://github.com/LiuYuYang01)，版权归原作者所有；原项目以 **AGPL-3.0** 开源，本仓库同步遵循同一协议。
+>
+> - 需要最新功能、官方文档与技术支持 → 请前往[上游仓库](https://github.com/LiuYuYang01/ThriveX-Admin)与[文档中心](https://docs.liuyuyang.net)
+> - 想了解本 fork 增加了什么 → 见 [本 fork 的改动](#本-fork-的改动)
+
 ## 📖 项目简介
 
 **ThriveX Admin** 是 ThriveX 博客系统的现代化管理后台，采用 Next.js 15 + React 19 + Ant Design 构建，提供全功能的内容管理、用户管理、系统配置等一站式解决方案。
@@ -93,6 +103,100 @@ ThriveX-Admin/
 | 官网地址    | [https://thrivex.liuyuyang.net](https://thrivex.liuyuyang.net)                               | 项目官网     |
 | 文档中心    | [https://docs.liuyuyang.net](https://docs.liuyuyang.net)                                     | 使用文档     |
 | GitHub 主页 | [https://github.com/LiuYuYang01/ThriveX-Admin](https://github.com/LiuYuYang01/ThriveX-Admin) | 源码仓库     |
+
+
+
+## 本 fork 的改动
+
+本 fork 与上游 `main` 保持同步，**不修改上游业务代码**，只在其之上补充工程化能力。
+
+| 类别 | 内容 |
+| --- | --- |
+| 持续集成 | 新增 `.github/workflows/ci.yml`：ESLint 检查 → 生产构建 → 归档 `dist` 产物 |
+| 持续部署 | 新增 `.github/workflows/deploy.yml`：手动触发，构建 Docker 镜像推送 GHCR，可 SSH 远程发布或发布到 Vercel |
+| 文档 | 补充 Fork 说明与 CI/CD 使用文档 |
+
+> 之所以不改上游代码，是为了后续能直接 `git fetch upstream && git merge upstream/main` 同步，避免冲突。
+
+
+
+## ⚙️ CI/CD
+
+### 持续集成 `.github/workflows/ci.yml`
+
+| 触发事件 | 说明 |
+| --- | --- |
+| `push` → `main` | 推送到主分支时自动运行 |
+| `pull_request` → `main` | 提交 PR 时自动校验 |
+| `workflow_dispatch` | 在 Actions 页面手动触发 |
+
+执行步骤：
+
+1. **安装依赖** —— `npm ci`，严格按 `package-lock.json` 安装，保证与本地环境一致
+2. **代码检查** —— `npm run lint`（ESLint 9 Flat Config）
+3. **生产构建** —— `npm run build`（Vite 7）
+4. **归档产物** —— 上传 `dist` 到 Actions Artifacts，保留 7 天
+
+运行时 Node.js 固定为 **22**，满足 `package.json` 中 `engines` 的 `node >= 20` 要求；启用并发控制，同一分支只保留最新一次运行。
+
+#### 可选：在 CI 中覆盖后端 API 地址
+
+仓库内的 `.env` 只保存了占位地址。若希望 CI 构建出的产物指向真实后端，可在
+**Settings → Secrets and variables → Actions → Variables** 中新增仓库变量：
+
+| 变量名 | 示例值 |
+| --- | --- |
+| `VITE_PROJECT_API` | `https://api.example.com/api` |
+
+未配置时，构建会直接使用仓库内 `.env` 的内容。
+
+
+
+### 持续部署 `.github/workflows/deploy.yml`
+
+该流水线**只在手动触发时执行**（`workflow_dispatch`），不会随 `push` 自动发布，因此未配置服务器时也不会在提交历史里留下失败记录。
+
+在 **Actions → Deploy → Run workflow** 中选择部署目标：
+
+| 目标 | 说明 |
+| --- | --- |
+| `docker` | 构建镜像并推送到 GitHub Container Registry（`ghcr.io`），再 SSH 到服务器拉取新镜像重启容器 |
+| `vercel` | 通过 Vercel CLI 构建并发布到 Vercel |
+| `both` | 同时执行以上两条 |
+
+Docker 部署需要在服务器放置 `docker-compose.yml`（仓库内已提供模板），并把 `<OWNER>` 替换为你的 GitHub 用户名。
+
+按下表配置 Secrets / Variables 后对应任务才会生效，未配置的任务会被自动跳过：
+
+| 名称 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `VITE_PROJECT_API` | Variable | 否 | 构建时注入的后端 API 地址 |
+| `DEPLOY_HOST` | Variable | 是（SSH 部署） | 服务器 IP 或域名 |
+| `DEPLOY_USER` | Variable | 是（SSH 部署） | SSH 登录用户名 |
+| `DEPLOY_PATH` | Variable | 是（SSH 部署） | 服务器上存放 `docker-compose.yml` 的目录 |
+| `DEPLOY_PORT` | Variable | 否 | SSH 端口，默认 22 |
+| `DEPLOY_SSH_KEY` | Secret | 是（SSH 部署） | SSH 私钥，用于免密登录 |
+| `VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` | Secret | 是（Vercel 部署） | Vercel 项目凭据 |
+
+#### 首次启用 Actions
+
+Fork 仓库的 Actions 默认处于关闭状态。首次进入 **Actions** 标签页时，点击
+**I understand my workflows, go ahead and enable them** 即可启用。
+
+
+
+## 💻 本地开发
+
+```bash
+# 环境要求：Node.js >= 20、npm >= 10
+npm ci            # 按锁定版本安装依赖
+npm run dev       # 启动开发服务器，默认 http://localhost:9100
+npm run lint      # 代码检查
+npm run build     # 生产构建，产物输出到 dist/（内部先执行 eslint 再 vite build）
+npm run preview   # 本地预览构建产物
+```
+
+构建前请确认 `.env` 中的 `VITE_PROJECT_API` 指向可用的后端服务地址。
 
 
 
