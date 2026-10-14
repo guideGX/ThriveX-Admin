@@ -1,0 +1,157 @@
+# ============================================================================
+# ThriveX-Admin CD
+# ----------------------------------------------------------------------------
+# 持续部署：构建 Docker 镜像 → 推送 GHCR → SSH 拉取镜像并重启容器
+#          （可选）Vercel 部署
+#
+# 说明：为避免未配置服务器时产生失败记录，本流水线**只在手动触发时执行**，
+#      不随 push 自动发布。在 Actions → Deploy → Run workflow 中选择目标。
+# ============================================================================
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 部署目标
+        required: true
+        default: docker
+        type: choice
+        options:
+          - docker
+          - vercel
+          - both
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  IMAGE_NAME: thrivex-admin
+
+jobs:
+  # ==========================================================================
+  # Job 1: 构建并推送 Docker 镜像到 GHCR
+  # ==========================================================================
+  docker-build:
+    name: 构建并推送 Docker 镜像
+    if: ${{ github.event.inputs.deploy_target == 'docker' || github.event.inputs.deploy_target == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      # 设置 Docker Buildx（支持构建缓存与多阶段构建）
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 登录 GitHub Container Registry（公开仓库免费）
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 自动生成镜像标签（latest / 分支名 / 手动输入的版本号 / commit SHA）
+      - name: 生成镜像元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # 构建并推送镜像（把 API 地址作为构建参数传给 Vite）
+      - name: 构建并推送镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_PROJECT_API=${{ vars.VITE_PROJECT_API }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ==========================================================================
+  # Job 2: SSH 远程部署（拉取新镜像并重启容器）
+  # ==========================================================================
+  ssh-deploy:
+    name: SSH 远程部署
+    needs: docker-build
+    if: ${{ vars.DEPLOY_HOST != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # 需要在 Settings → Secrets and variables → Actions 中配置：
+    #   DEPLOY_HOST    — 服务器 IP 或域名（Variables）
+    #   DEPLOY_PORT    — SSH 端口，默认 22（Variables，可省略）
+    #   DEPLOY_USER    — SSH 用户名（Variables）
+    #   DEPLOY_PATH    — 服务器上存放 docker-compose.yml 的目录（Variables）
+    #   DEPLOY_SSH_KEY — SSH 私钥（Secrets）
+
+    steps:
+      - name: 通过 SSH 拉取镜像并重启容器
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          port: ${{ vars.DEPLOY_PORT || 22 }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ vars.DEPLOY_PATH }}
+            docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            docker compose down || true
+            docker compose up -d
+            docker image prune -f
+            echo "部署完成: $(date '+%Y-%m-%d %H:%M:%S')"
+
+  # ==========================================================================
+  # Job 3: Vercel 部署（可选）
+  # ==========================================================================
+  vercel-deploy:
+    name: Vercel 部署
+    if: ${{ github.event.inputs.deploy_target == 'vercel' || github.event.inputs.deploy_target == 'both' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # 需要配置 Secrets：VERCEL_TOKEN、VERCEL_ORG_ID、VERCEL_PROJECT_ID
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 安装 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: 安装 Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: 拉取 Vercel 环境配置
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: 构建项目
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: 部署到 Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

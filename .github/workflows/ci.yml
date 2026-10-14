@@ -1,0 +1,72 @@
+# ============================================================================
+# ThriveX-Admin CI
+# ----------------------------------------------------------------------------
+# 持续集成：安装依赖 → ESLint 检查 → 生产构建 → 归档产物
+# 触发条件：push 到 main、PR 到 main、手动触发
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint-build:
+    name: 代码检查与构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # 1. 拉取代码
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      # 2. 安装 Node.js（自带 npm 依赖缓存）
+      - name: 安装 Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # 3. 按锁文件安装，保证与本地一致
+      - name: 安装依赖
+        run: npm ci
+
+      # 4. ESLint 代码规范检查
+      - name: 代码检查 (ESLint)
+        run: npm run lint
+
+      # 5. 可选：用仓库变量覆盖后端 API 地址
+      #    在 Settings → Secrets and variables → Actions → Variables 中配置
+      #    VITE_PROJECT_API 后生效；未配置时沿用仓库内 .env
+      - name: 覆盖后端 API 地址（可选）
+        if: ${{ vars.VITE_PROJECT_API != '' }}
+        run: echo "VITE_PROJECT_API=${{ vars.VITE_PROJECT_API }}" > .env
+
+      # 6. 生产构建（Vite，产物输出到 dist/）
+      - name: 生产构建 (Vite Build)
+        run: npm run build
+
+      # 7. 归档构建产物
+      - name: 归档构建产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: thrivex-admin-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
