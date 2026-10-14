@@ -16,6 +16,9 @@
     <a href="https://github.com/LiuYuYang01/ThriveX-Admin/network" target="_blank">
         <img alt="Forks" src="https://img.shields.io/github/forks/LiuYuYang01/ThriveX-Admin?style=flat-square&logo=github" />
     </a>
+    <a href="https://github.com/guideGX/ThriveX-Admin/actions/workflows/ci.yml" target="_blank">
+        <img alt="CI" src="https://github.com/guideGX/ThriveX-Admin/actions/workflows/ci.yml/badge.svg" />
+    </a>
 </p>
 
 ---
